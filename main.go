@@ -1,4 +1,3 @@
-// main.go
 package main
 
 import (
@@ -26,11 +25,14 @@ func main() {
 	authMiddleware := middleware.NewAuthMiddleware(jwtSvc, userRepo)
 
 	// ============================
-	// FIBER APP
+	// INIT FIBER APP
 	// ============================
 	app := fiber.New()
+
+	// Routes
 	route.AuthRoute(app, authSvc, authMiddleware)
 
+	// Health check
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "OK"})
 	})
