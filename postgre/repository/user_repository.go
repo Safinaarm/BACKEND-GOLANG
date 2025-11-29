@@ -10,6 +10,7 @@ import (
 
 type UserRepository interface {
 	FindByUsernameOrEmail(ctx context.Context, identifier string) (*model.User, error)
+	FindByID(ctx context.Context, id string) (*model.User, error)
 	GetRoleNameByID(ctx context.Context, roleID string) (string, error)
 	GetPermissionsByRoleID(ctx context.Context, roleID string) ([]string, error)
 }
@@ -28,6 +29,26 @@ func (r *userRepository) FindByUsernameOrEmail(ctx context.Context, identifier s
 	      WHERE username=$1 OR email=$1 LIMIT 1`
 	u := &model.User{}
 	row := r.db.QueryRowContext(ctx, q, identifier)
+	var createdAt, updatedAt sql.NullTime
+	err := row.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.FullName, &u.RoleID, &u.IsActive, &createdAt, &updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if createdAt.Valid {
+		u.CreatedAt = createdAt.Time
+	}
+	if updatedAt.Valid {
+		u.UpdatedAt = updatedAt.Time
+	}
+	return u, nil
+}
+
+func (r *userRepository) FindByID(ctx context.Context, id string) (*model.User, error) {
+	q := `SELECT id, username, email, password_hash, full_name, role_id, is_active, created_at, updated_at
+	      FROM users
+	      WHERE id=$1 LIMIT 1`
+	u := &model.User{}
+	row := r.db.QueryRowContext(ctx, q, id)
 	var createdAt, updatedAt sql.NullTime
 	err := row.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.FullName, &u.RoleID, &u.IsActive, &createdAt, &updatedAt)
 	if err != nil {

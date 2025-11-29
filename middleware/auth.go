@@ -50,7 +50,7 @@ func (m *AuthMiddlewareConfig) AuthRequired() fiber.Handler {
 				"message": "invalid or expired token",
 			})
 		}
-		claims, ok := token.Claims.(*jwt.JWTCustomClaim)
+		claims, ok := token.Claims.(*jwt.Claims)
 		if !ok {
 			return c.Status(http.StatusUnauthorized).JSON(fiber.Map{
 				"status":  "error",

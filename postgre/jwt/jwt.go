@@ -1,51 +1,55 @@
-// postgre/jwt.go
+// postgre/jwt/jwt.go
 package jwt
 
 import (
 	"time"
 
-	jwtlib "github.com/golang-jwt/jwt/v5"
+	jwt "github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
+type Claims struct {
+	UserID string `json:"userId"`
+	RoleID string `json:"roleId"`
+	Role   string `json:"role"`
+	jwt.RegisteredClaims `json:",inline"`
+}
+
 type JWTService interface {
-	GenerateToken(userID, roleID, roleName string) (string, error)
-	ValidateToken(tokenString string) (*jwtlib.Token, error)
+	GenerateToken(userID, roleID, role string) (string, error)
+	ValidateToken(tokenStr string) (*jwt.Token, error)
+	CheckPasswordHash(password, hash string) bool
 }
 
 type jwtService struct {
-	secretKey string
+	secret []byte
 }
 
 func NewJWTService(secret string) JWTService {
-	return &jwtService{
-		secretKey: secret,
-	}
+	return &jwtService{secret: []byte(secret)}
 }
 
-// Claims JWT
-type JWTCustomClaim struct {
-	UserID  string `json:"userId"`
-	RoleID  string `json:"roleId"`
-	Role    string `json:"role"`
-	jwtlib.RegisteredClaims
-}
-
-func (j *jwtService) GenerateToken(userID, roleID, roleName string) (string, error) {
-	claims := &JWTCustomClaim{
-		UserID:  userID,
-		RoleID:  roleID,
-		Role:    roleName,
-		RegisteredClaims: jwtlib.RegisteredClaims{
-			ExpiresAt: jwtlib.NewNumericDate(time.Now().Add(time.Hour * 24)),
-			IssuedAt:  jwtlib.NewNumericDate(time.Now()),
+func (s *jwtService) GenerateToken(userID, roleID, role string) (string, error) {
+	claims := &Claims{
+		UserID: userID,
+		RoleID: roleID,
+		Role:   role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)), // 24h for demo; make refresh longer in prod
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
-	token := jwtlib.NewWithClaims(jwtlib.SigningMethodHS256, claims)
-	return token.SignedString([]byte(j.secretKey))
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.secret)
 }
 
-func (j *jwtService) ValidateToken(tokenString string) (*jwtlib.Token, error) {
-	return jwtlib.ParseWithClaims(tokenString, &JWTCustomClaim{}, func(token *jwtlib.Token) (interface{}, error) {
-		return []byte(j.secretKey), nil
+func (s *jwtService) ValidateToken(tokenStr string) (*jwt.Token, error) {
+	return jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		return s.secret, nil
 	})
+}
+
+func (s *jwtService) CheckPasswordHash(password, hash string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	return err == nil
 }
