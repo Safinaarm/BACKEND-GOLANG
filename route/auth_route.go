@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"BACKEND-UAS/middleware"
-	"BACKEND-UAS/postgre/service"
+	"BACKEND-UAS/pgmongo/service"
 
 	"github.com/gofiber/fiber/v2"
 )

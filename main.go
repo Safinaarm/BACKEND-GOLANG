@@ -8,10 +8,10 @@ import (
 
 	"BACKEND-UAS/config"
 	"BACKEND-UAS/middleware"
-	"BACKEND-UAS/postgre/jwt"
-	"BACKEND-UAS/postgre/repository"
+	"BACKEND-UAS/pgmongo/jwt"
+	"BACKEND-UAS/pgmongo/repository"
 	"BACKEND-UAS/route"
-	"BACKEND-UAS/postgre/service"
+	"BACKEND-UAS/pgmongo/service"
 )
 
 func main() {

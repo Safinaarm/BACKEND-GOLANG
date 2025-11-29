@@ -5,9 +5,9 @@ import (
 	"context"
 	"errors"
 
-	"BACKEND-UAS/postgre/jwt"
-	"BACKEND-UAS/postgre/model"
-	"BACKEND-UAS/postgre/repository"
+	"BACKEND-UAS/pgmongo/jwt"
+	"BACKEND-UAS/pgmongo/model"
+	"BACKEND-UAS/pgmongo/repository"
 )
 
 type AuthService interface {

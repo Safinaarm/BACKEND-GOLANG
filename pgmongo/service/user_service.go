@@ -6,9 +6,9 @@ import (
 	"errors"
 	"time"
 
-	"BACKEND-UAS/postgre/jwt"
-	"BACKEND-UAS/postgre/model"
-	"BACKEND-UAS/postgre/repository"
+	"BACKEND-UAS/pgmongo/jwt"
+	"BACKEND-UAS/pgmongo/model"
+	"BACKEND-UAS/pgmongo/repository"
 
 	"github.com/google/uuid"
 )

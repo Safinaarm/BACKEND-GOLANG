@@ -6,7 +6,7 @@ import (
 	"database/sql"
 	"time"
 
-	"BACKEND-UAS/postgre/model"
+	"BACKEND-UAS/pgmongo/model"
 )
 
 type UserRepository interface {

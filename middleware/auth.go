@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"BACKEND-UAS/postgre/jwt"
-	"BACKEND-UAS/postgre/repository"
+	"BACKEND-UAS/pgmongo/jwt"
+	"BACKEND-UAS/pgmongo/repository"
 
 	"github.com/gofiber/fiber/v2"
 )
