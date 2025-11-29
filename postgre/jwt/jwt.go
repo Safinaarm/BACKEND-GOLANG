@@ -4,7 +4,7 @@ package jwt
 import (
 	"time"
 
-	jwt "github.com/golang-jwt/jwt/v5"
+	jwtpkg "github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -12,13 +12,14 @@ type Claims struct {
 	UserID string `json:"userId"`
 	RoleID string `json:"roleId"`
 	Role   string `json:"role"`
-	jwt.RegisteredClaims `json:",inline"`
+	jwtpkg.RegisteredClaims `json:",inline"`
 }
 
 type JWTService interface {
 	GenerateToken(userID, roleID, role string) (string, error)
-	ValidateToken(tokenStr string) (*jwt.Token, error)
+	ValidateToken(tokenStr string) (*jwtpkg.Token, error)
 	CheckPasswordHash(password, hash string) bool
+	HashPassword(password string) (string, error)
 }
 
 type jwtService struct {
@@ -34,17 +35,17 @@ func (s *jwtService) GenerateToken(userID, roleID, role string) (string, error) 
 		UserID: userID,
 		RoleID: roleID,
 		Role:   role,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)), // 24h for demo; make refresh longer in prod
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		RegisteredClaims: jwtpkg.RegisteredClaims{
+			ExpiresAt: jwtpkg.NewNumericDate(time.Now().Add(24 * time.Hour)), // 24h for demo; make refresh longer in prod
+			IssuedAt:  jwtpkg.NewNumericDate(time.Now()),
 		},
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	token := jwtpkg.NewWithClaims(jwtpkg.SigningMethodHS256, claims)
 	return token.SignedString(s.secret)
 }
 
-func (s *jwtService) ValidateToken(tokenStr string) (*jwt.Token, error) {
-	return jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+func (s *jwtService) ValidateToken(tokenStr string) (*jwtpkg.Token, error) {
+	return jwtpkg.ParseWithClaims(tokenStr, &Claims{}, func(token *jwtpkg.Token) (interface{}, error) {
 		return s.secret, nil
 	})
 }
@@ -52,4 +53,9 @@ func (s *jwtService) ValidateToken(tokenStr string) (*jwt.Token, error) {
 func (s *jwtService) CheckPasswordHash(password, hash string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 	return err == nil
+}
+
+func (s *jwtService) HashPassword(password string) (string, error) {
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
+	return string(bytes), err
 }
