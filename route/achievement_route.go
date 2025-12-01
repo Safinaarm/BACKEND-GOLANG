@@ -236,7 +236,7 @@ func RegisterAchievementRoutes(app *fiber.App, svc *service.AchievementService, 
 		return c.JSON(histories)
 	})
 
-	ach.Post("/:id/attachments", middleware.RequirePermission("achievement:upload"), func(c *fiber.Ctx) error {
+	ach.Post("/:id/attachments", func(c *fiber.Ctx) error {
 		// POST /api/v1/achievements/:id/attachments - Upload files
 		idStr := c.Params("id")
 		id, err := uuid.Parse(idStr)
