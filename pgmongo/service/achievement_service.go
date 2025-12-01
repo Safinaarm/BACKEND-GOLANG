@@ -64,21 +64,33 @@ func (s *AchievementService) GetUserAchievements(userID uuid.UUID, role string, 
 
 // === SEMUA FUNGSI LAIN SUDAH AMAN ===
 
-func (s *AchievementService) GetAchievementDetail(id uuid.UUID) (*model.AchievementResponse, error) {
-	ref, err := s.postgresRepo.GetAchievementReferenceByID(id)
-	if err != nil {
-		return nil, fmt.Errorf("reference not found: %w", err)
-	}
-	if ref.Status == "deleted" {
-		return nil, errors.New("achievement not found")
-	}
+// File: service/achievement_service.go
 
-	ach, err := s.mongoRepo.GetAchievementByID(ref.MongoAchievementID)
-	if err != nil || ach == nil {
-		return nil, errors.New("achievement details not found")
-	}
+func (s *AchievementService) GetAchievementDetail(id uuid.UUID) (*model.AchievementDetailResponse, error) {
+    ref, err := s.postgresRepo.GetAchievementReferenceByID(id)
+    if err != nil {
+        return nil, fmt.Errorf("reference not found: %w", err)
+    }
+    if ref.Status == "deleted" {
+        return nil, errors.New("achievement not found")
+    }
 
-	return &model.AchievementResponse{Reference: *ref, Achievement: *ach}, nil
+    ach, err := s.mongoRepo.GetAchievementByID(ref.MongoAchievementID)
+    if err != nil || ach == nil || ach.DeletedAt != nil {
+        return nil, errors.New("achievement details not found or deleted")
+    }
+
+    return &model.AchievementDetailResponse{
+        ID:            ref.ID.String(),
+        Student:       ref.Student,
+        Status:        ref.Status,
+        SubmittedAt:   ref.SubmittedAt,
+        VerifiedAt:    ref.VerifiedAt,
+        VerifiedBy:    ref.VerifiedBy,
+        RejectionNote: ref.RejectionNote,
+        Achievement:   *ach,
+        StatusHistory: ach.StatusHistory,
+    }, nil
 }
 
 func (s *AchievementService) CreateAchievement(userID uuid.UUID, ach model.Achievement) (*model.AchievementReference, error) {
