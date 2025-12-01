@@ -139,7 +139,7 @@ func RegisterAchievementRoutes(app *fiber.App, svc *service.AchievementService, 
 		return c.JSON(fiber.Map{"message": "Deleted successfully"})
 	})
 
-	ach.Post("/:id/submit", middleware.RequirePermission("achievement:submit"), func(c *fiber.Ctx) error {
+	ach.Post("/:id/submit", func(c *fiber.Ctx) error {
 		// POST /api/v1/achievements/:id/submit - Submit for verification
 		idStr := c.Params("id")
 		id, err := uuid.Parse(idStr)
@@ -163,7 +163,7 @@ func RegisterAchievementRoutes(app *fiber.App, svc *service.AchievementService, 
 		return c.JSON(fiber.Map{"status": "submitted"})
 	})
 
-	ach.Post("/:id/verify", middleware.RequirePermission("achievement:verify"), func(c *fiber.Ctx) error {
+	ach.Post("/:id/verify", func(c *fiber.Ctx) error {
 		// POST /api/v1/achievements/:id/verify - Verify (Dosen Wali)
 		idStr := c.Params("id")
 		id, err := uuid.Parse(idStr)
@@ -187,7 +187,7 @@ func RegisterAchievementRoutes(app *fiber.App, svc *service.AchievementService, 
 		return c.JSON(fiber.Map{"status": "verified"})
 	})
 
-	ach.Post("/:id/reject", middleware.RequirePermission("achievement:reject"), func(c *fiber.Ctx) error {
+	ach.Post("/:id/reject", func(c *fiber.Ctx) error {
 		// POST /api/v1/achievements/:id/reject - Reject (Dosen Wali)
 		idStr := c.Params("id")
 		id, err := uuid.Parse(idStr)
