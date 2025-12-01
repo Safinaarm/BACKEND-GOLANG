@@ -1,3 +1,4 @@
+// File: BACKEND-UAS/main.go
 package main
 
 import (
@@ -10,8 +11,8 @@ import (
 	"BACKEND-UAS/middleware"
 	"BACKEND-UAS/pgmongo/jwt"
 	"BACKEND-UAS/pgmongo/repository"
-	"BACKEND-UAS/route"
 	"BACKEND-UAS/pgmongo/service"
+	"BACKEND-UAS/route"
 )
 
 func main() {
@@ -23,8 +24,13 @@ func main() {
 	userRepo := repository.NewUserRepository(cfg.Connection.PostgresDB)
 	jwtSvc := jwt.NewJWTService(cfg.JWTSecret)
 	authSvc := service.NewAuthService(userRepo, jwtSvc)
-	userSvc := service.NewUserService(userRepo, jwtSvc) // Tambah ini buat users CRUD
+	userSvc := service.NewUserService(userRepo, jwtSvc)
 	authMiddleware := middleware.NewAuthMiddleware(jwtSvc, userRepo)
+
+	// Achievement repos
+	achievementPgRepo := repository.NewAchievementRepository(cfg.Connection.PostgresDB)
+	achievementMongoRepo := repository.NewAchievementRepositoryMongo(cfg.Connection.MongoClient)
+	achievementSvc := service.NewAchievementService(achievementPgRepo, achievementMongoRepo)
 
 	// ============================
 	// INIT FIBER APP
@@ -38,9 +44,10 @@ func main() {
 	// CORS middleware (buat Postman/browser)
 	app.Use(cors.New())
 
-	// Routes
+	// Routes - Pass authMiddleware ke achievement
 	route.AuthRoute(app, authSvc, authMiddleware)
-	route.UserRoute(app, userSvc, authMiddleware) // Tambah ini! Buat /api/v1/users
+	route.UserRoute(app, userSvc, authMiddleware)
+	route.RegisterAchievementRoutes(app, achievementSvc, authMiddleware)
 
 	// Health check
 	app.Get("/health", func(c *fiber.Ctx) error {

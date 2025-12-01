@@ -21,6 +21,7 @@ type UserRepository interface {
 	GetPermissionsByRoleID(ctx context.Context, roleID string) ([]string, error)
 }
 
+
 type userRepository struct {
 	db *sql.DB
 }

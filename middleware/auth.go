@@ -9,6 +9,7 @@ import (
 	"BACKEND-UAS/pgmongo/repository"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 )
 
 type AuthMiddlewareConfig struct {
@@ -57,12 +58,25 @@ func (m *AuthMiddlewareConfig) AuthRequired() fiber.Handler {
 				"message": "invalid claims",
 			})
 		}
-		// simpan ke Fiber Locals
-		c.Locals("userId", claims.UserID)
-		c.Locals("roleId", claims.RoleID)
-		c.Locals("role", claims.Role)
-		// load permissions dari DB
-		perms, err := m.UserRepo.GetPermissionsByRoleID(c.Context(), claims.RoleID)
+
+		// Asumsi claims.UserID adalah string UUID
+		userIDStr := claims.UserID // Langsung string
+		userID, err := uuid.Parse(userIDStr)
+		if err != nil {
+			return c.Status(http.StatusUnauthorized).JSON(fiber.Map{
+				"status":  "error",
+				"message": "invalid user ID in claims",
+			})
+		}
+
+		// simpan ke Fiber Locals (match dengan route: user_id as string, role as string)
+		c.Locals("user_id", userIDStr) // String UUID untuk parse di route
+		c.Locals("role", claims.Role)  // String role
+		c.Locals("userId", userID)     // UUID untuk service/repo
+
+		// Load permissions dari DB via roleID (pakai method existing GetPermissionsByRoleID)
+		roleID := claims.RoleID // Asumsi claims.RoleID adalah string
+		perms, err := m.UserRepo.GetPermissionsByRoleID(c.Context(), roleID)
 		if err != nil {
 			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
 				"status":  "error",
@@ -70,6 +84,7 @@ func (m *AuthMiddlewareConfig) AuthRequired() fiber.Handler {
 			})
 		}
 		c.Locals("permissions", perms)
+
 		return c.Next()
 	}
 }
