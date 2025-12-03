@@ -32,6 +32,10 @@ func main() {
 	achievementMongoRepo := repository.NewAchievementRepositoryMongo(cfg.Connection.MongoClient)
 	achievementSvc := service.NewAchievementService(achievementPgRepo, achievementMongoRepo)
 
+	// Student repos and services
+	studentRepo := repository.NewStudentRepository(cfg.Connection.PostgresDB)
+	studentSvc := service.NewStudentService(studentRepo, achievementPgRepo)
+
 	// ============================
 	// INIT FIBER APP
 	// ============================
@@ -44,10 +48,11 @@ func main() {
 	// CORS middleware (buat Postman/browser)
 	app.Use(cors.New())
 
-	// Routes - Pass authMiddleware ke achievement
+	// Routes
 	route.AuthRoute(app, authSvc, authMiddleware)
 	route.UserRoute(app, userSvc, authMiddleware)
 	route.RegisterAchievementRoutes(app, achievementSvc, authMiddleware)
+	route.SetupStudentRoutes(app, studentSvc, authMiddleware) // Pass authMiddleware for student routes
 
 	// Health check
 	app.Get("/health", func(c *fiber.Ctx) error {
