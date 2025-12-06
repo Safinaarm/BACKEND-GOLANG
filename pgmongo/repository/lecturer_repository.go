@@ -2,76 +2,253 @@
 package repository
 
 import (
-	"context"
-	"errors"
+	"database/sql"
 
 	"github.com/google/uuid"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-
 	"BACKEND-UAS/pgmongo/model"
 )
 
 type LecturerRepository interface {
-	FindAll(ctx context.Context) ([]model.Lecturer, error)
-	FindByID(ctx context.Context, id uuid.UUID) (*model.Lecturer, error)
-	FindAdvisees(ctx context.Context, id uuid.UUID) ([]model.Student, error)
+	GetAll(page, limit int) (*model.PaginatedResponse[model.Lecturer], error)
+	GetByID(id uuid.UUID) (*model.Lecturer, error)
+	GetByUserID(userID uuid.UUID) (*model.Lecturer, error)
 }
 
-type lecturerRepository struct {
-	coll *mongo.Collection
-	studentColl *mongo.Collection
+type LecturerRepositoryImpl struct {
+	db *sql.DB
 }
 
-func NewLecturerRepository(db *mongo.Database) LecturerRepository {
-	return &lecturerRepository{
-		coll: db.Collection("lecturers"),
-		studentColl: db.Collection("students"),
-	}
+func NewLecturerRepository(db *sql.DB) LecturerRepository {
+	return &LecturerRepositoryImpl{db: db}
 }
 
-func (r *lecturerRepository) FindAll(ctx context.Context) ([]model.Lecturer, error) {
-	filter := bson.M{}
-	opts := options.Find()
-	cur, err := r.coll.Find(ctx, filter, opts)
-	if err != nil {
-		return nil, err
-	}
-	defer cur.Close(ctx)
-
+// ===================== SCAN LECTURER ROWS =====================
+func (r *LecturerRepositoryImpl) scanLecturerRows(rows *sql.Rows) ([]model.Lecturer, error) {
 	var lecturers []model.Lecturer
-	if err = cur.All(ctx, &lecturers); err != nil {
-		return nil, err
+	for rows.Next() {
+		var l model.Lecturer
+		var (
+			lID      string
+			lUserID  string
+			uID      sql.NullString
+			uUsername sql.NullString
+			uEmail   sql.NullString
+			uFullName sql.NullString
+			uRoleID  sql.NullString
+			uIsActive sql.NullBool
+			uCreatedAt sql.NullTime
+			uUpdatedAt sql.NullTime
+		)
+		err := rows.Scan(
+			&lID,
+			&lUserID,
+			&l.LecturerID,
+			&l.Department,
+			&l.CreatedAt,
+			&uID,
+			&uUsername,
+			&uEmail,
+			&uFullName,
+			&uRoleID,
+			&uIsActive,
+			&uCreatedAt,
+			&uUpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		l.ID = uuidFromString(lID)
+		l.UserID = uuidFromString(lUserID)
+		l.User.ID = getStringOrEmpty(uID)
+		l.User.Username = getStringOrEmpty(uUsername)
+		l.User.Email = getStringOrEmpty(uEmail)
+		l.User.FullName = getStringOrEmpty(uFullName)
+		l.User.RoleID = getStringOrEmpty(uRoleID)
+		if uIsActive.Valid {
+			l.User.IsActive = uIsActive.Bool
+		}
+		if uCreatedAt.Valid {
+			l.User.CreatedAt = uCreatedAt.Time
+		}
+		if uUpdatedAt.Valid {
+			l.User.UpdatedAt = uUpdatedAt.Time
+		}
+		l.Notifications = []model.Notification{}
+		lecturers = append(lecturers, l)
 	}
 	return lecturers, nil
 }
 
-func (r *lecturerRepository) FindByID(ctx context.Context, id uuid.UUID) (*model.Lecturer, error) {
-	var lecturer model.Lecturer
-	filter := bson.M{"id": id}
-	err := r.coll.FindOne(ctx, filter).Decode(&lecturer)
+// ===================== LIST ALL =====================
+func (r *LecturerRepositoryImpl) GetAll(page, limit int) (*model.PaginatedResponse[model.Lecturer], error) {
+	var total int64
+	countQuery := `SELECT COUNT(*) FROM lecturers`
+	err := r.db.QueryRow(countQuery).Scan(&total)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return nil, errors.New("lecturer not found")
-		}
 		return nil, err
 	}
-	return &lecturer, nil
+
+	offset := (page - 1) * limit
+	query := `
+SELECT 
+    l.id, l.user_id, l.lecturer_id, l.department, l.created_at,
+    u.id, u.username, u.email, u.full_name, u.role_id, u.is_active, u.created_at, u.updated_at
+FROM lecturers l
+JOIN users u ON l.user_id = u.id
+ORDER BY l.created_at DESC
+LIMIT $1 OFFSET $2
+`
+	rows, err := r.db.Query(query, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	data, err := r.scanLecturerRows(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	totalPages := (int(total) + limit - 1) / limit
+	return &model.PaginatedResponse[model.Lecturer]{
+		Data:       data,
+		Page:       page,
+		Limit:      limit,
+		Total:      total,
+		TotalPages: totalPages,
+	}, nil
 }
 
-func (r *lecturerRepository) FindAdvisees(ctx context.Context, id uuid.UUID) ([]model.Student, error) {
-	filter := bson.M{"advisor_id": id}
-	opts := options.Find()
-	cur, err := r.studentColl.Find(ctx, filter, opts)
+// ===================== DETAIL BY ID =====================
+func (r *LecturerRepositoryImpl) GetByID(id uuid.UUID) (*model.Lecturer, error) {
+	query := `
+SELECT 
+    l.id, l.user_id, l.lecturer_id, l.department, l.created_at,
+    u.id, u.username, u.email, u.full_name, u.role_id, u.is_active, u.created_at, u.updated_at
+FROM lecturers l
+JOIN users u ON l.user_id = u.id
+WHERE l.id = $1
+`
+	row := r.db.QueryRow(query, id.String())
+
+	var l model.Lecturer
+	var (
+		lID      string
+		lUserID  string
+		uID      sql.NullString
+		uUsername sql.NullString
+		uEmail   sql.NullString
+		uFullName sql.NullString
+		uRoleID  sql.NullString
+		uIsActive sql.NullBool
+		uCreatedAt sql.NullTime
+		uUpdatedAt sql.NullTime
+	)
+	err := row.Scan(
+		&lID,
+		&lUserID,
+		&l.LecturerID,
+		&l.Department,
+		&l.CreatedAt,
+		&uID,
+		&uUsername,
+		&uEmail,
+		&uFullName,
+		&uRoleID,
+		&uIsActive,
+		&uCreatedAt,
+		&uUpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	defer cur.Close(ctx)
 
-	var students []model.Student
-	if err = cur.All(ctx, &students); err != nil {
+	l.ID = uuidFromString(lID)
+	l.UserID = uuidFromString(lUserID)
+	l.User.ID = getStringOrEmpty(uID)
+	l.User.Username = getStringOrEmpty(uUsername)
+	l.User.Email = getStringOrEmpty(uEmail)
+	l.User.FullName = getStringOrEmpty(uFullName)
+	l.User.RoleID = getStringOrEmpty(uRoleID)
+	if uIsActive.Valid {
+		l.User.IsActive = uIsActive.Bool
+	}
+	if uCreatedAt.Valid {
+		l.User.CreatedAt = uCreatedAt.Time
+	}
+	if uUpdatedAt.Valid {
+		l.User.UpdatedAt = uUpdatedAt.Time
+	}
+	l.Notifications = []model.Notification{}
+	return &l, nil
+}
+
+// ===================== DETAIL BY USER ID =====================
+func (r *LecturerRepositoryImpl) GetByUserID(userID uuid.UUID) (*model.Lecturer, error) {
+	query := `
+SELECT 
+    l.id, l.user_id, l.lecturer_id, l.department, l.created_at,
+    u.id, u.username, u.email, u.full_name, u.role_id, u.is_active, u.created_at, u.updated_at
+FROM lecturers l
+JOIN users u ON l.user_id = u.id
+WHERE l.user_id = $1
+`
+	row := r.db.QueryRow(query, userID.String())
+
+	var l model.Lecturer
+	var (
+		lID      string
+		lUserID  string
+		uID      sql.NullString
+		uUsername sql.NullString
+		uEmail   sql.NullString
+		uFullName sql.NullString
+		uRoleID  sql.NullString
+		uIsActive sql.NullBool
+		uCreatedAt sql.NullTime
+		uUpdatedAt sql.NullTime
+	)
+	err := row.Scan(
+		&lID,
+		&lUserID,
+		&l.LecturerID,
+		&l.Department,
+		&l.CreatedAt,
+		&uID,
+		&uUsername,
+		&uEmail,
+		&uFullName,
+		&uRoleID,
+		&uIsActive,
+		&uCreatedAt,
+		&uUpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
 		return nil, err
 	}
-	return students, nil
+
+	l.ID = uuidFromString(lID)
+	l.UserID = uuidFromString(lUserID)
+	l.User.ID = getStringOrEmpty(uID)
+	l.User.Username = getStringOrEmpty(uUsername)
+	l.User.Email = getStringOrEmpty(uEmail)
+	l.User.FullName = getStringOrEmpty(uFullName)
+	l.User.RoleID = getStringOrEmpty(uRoleID)
+	if uIsActive.Valid {
+		l.User.IsActive = uIsActive.Bool
+	}
+	if uCreatedAt.Valid {
+		l.User.CreatedAt = uCreatedAt.Time
+	}
+	if uUpdatedAt.Valid {
+		l.User.UpdatedAt = uUpdatedAt.Time
+	}
+	l.Notifications = []model.Notification{}
+	return &l, nil
 }

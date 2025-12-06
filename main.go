@@ -36,6 +36,10 @@ func main() {
 	studentRepo := repository.NewStudentRepository(cfg.Connection.PostgresDB)
 	studentSvc := service.NewStudentService(studentRepo, achievementPgRepo)
 
+	// Lecturer repos and services
+	lecturerRepo := repository.NewLecturerRepository(cfg.Connection.PostgresDB)
+	lecturerSvc := service.NewLecturerService(lecturerRepo, studentRepo)
+
 	// ============================
 	// INIT FIBER APP
 	// ============================
@@ -53,6 +57,7 @@ func main() {
 	route.UserRoute(app, userSvc, authMiddleware)
 	route.RegisterAchievementRoutes(app, achievementSvc, authMiddleware)
 	route.SetupStudentRoutes(app, studentSvc, authMiddleware) // Pass authMiddleware for student routes
+	route.SetupLecturerRoutes(app, lecturerSvc, authMiddleware) // Pass authMiddleware for lecturer routes
 
 	// Health check
 	app.Get("/health", func(c *fiber.Ctx) error {

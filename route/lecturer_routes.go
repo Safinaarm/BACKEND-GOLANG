@@ -1,48 +1,82 @@
 // File: BACKEND-UAS/route/lecturer_routes.go
-// Note: Adapted to Fiber v2. No auth for now.
-
 package route
 
 import (
-	"context"
+	"net/http"
+	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 
+	"BACKEND-UAS/middleware"
 	"BACKEND-UAS/pgmongo/service"
 )
 
-func RegisterLecturerRoutes(app *fiber.App, lecturerSvc service.LecturerService) {
-	api := app.Group("/api/v1")
-	api.Get("/lecturers", getAllLecturers(lecturerSvc))
-	api.Get("/lecturers/:id/advisees", getLecturerAdvisees(lecturerSvc))
-}
+// SetupLecturerRoutes sets up the lecturer routes with auth middleware
+func SetupLecturerRoutes(app *fiber.App, lecturerSvc service.LecturerService, authM *middleware.AuthMiddlewareConfig) {
+	v1 := app.Group("/api/v1")
+	{
+		lecturers := v1.Group("/lecturers")
+		lecturers.Use(authM.AuthRequired()) // Apply auth middleware
+		{
+			// GET /api/v1/lecturers - Filtered by user type (from DB)
+			lecturers.Get("/", func(c *fiber.Ctx) error {
+				userIDStr, ok := c.Locals("user_id").(string)
+				if !ok {
+					return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+				}
+				userID, err := uuid.Parse(userIDStr)
+				if err != nil {
+					return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid user ID"})
+				}
 
-func getAllLecturers(lecturerSvc service.LecturerService) fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		ctx := context.Background()
-		lecturers, err := lecturerSvc.FindAll(ctx)
-		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+				pageStr := c.Query("page")
+				limitStr := c.Query("limit")
+
+				page, _ := strconv.Atoi(pageStr)
+				if page < 1 {
+					page = 1
+				}
+				limit, _ := strconv.Atoi(limitStr)
+				if limit < 1 || limit > 100 {
+					limit = 10
+				}
+
+				paginated, err := lecturerSvc.GetAllLecturers(c.Context(), userID, page, limit)
+				if err != nil {
+					return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+				}
+
+				return c.JSON(paginated)
+			})
+
+			// GET /api/v1/lecturers/:id/advisees - With access check
+			lecturers.Get("/:id/advisees", func(c *fiber.Ctx) error {
+				idStr := c.Params("id")
+				id, err := uuid.Parse(idStr)
+				if err != nil {
+					return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid lecturer ID"})
+				}
+
+				userIDStr, ok := c.Locals("user_id").(string)
+				if !ok {
+					return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+				}
+				userID, err := uuid.Parse(userIDStr)
+				if err != nil {
+					return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid user ID"})
+				}
+
+				advisees, err := lecturerSvc.GetAdvisees(c.Context(), id, userID)
+				if err != nil {
+					if err.Error() == "lecturer not found" || err.Error() == "access denied" {
+						return c.Status(http.StatusForbidden).JSON(fiber.Map{"error": err.Error()})
+					}
+					return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+				}
+
+				return c.JSON(fiber.Map{"data": advisees})
+			})
 		}
-		return c.JSON(lecturers)
-	}
-}
-
-func getLecturerAdvisees(lecturerSvc service.LecturerService) fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		idStr := c.Params("id")
-		id, err := uuid.Parse(idStr)
-		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "Invalid lecturer ID format"})
-		}
-
-		ctx := context.Background()
-		advisees, err := lecturerSvc.FindAdvisees(ctx, id)
-		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-		}
-
-		return c.JSON(advisees)
 	}
 }
