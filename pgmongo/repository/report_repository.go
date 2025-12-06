@@ -4,6 +4,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,17 +14,22 @@ import (
 type ReportRepository interface {
 	GetAchievementStatistics(ctx context.Context, userID uuid.UUID) (*model.AchievementStatistics, error)
 	GetStudentAchievementStatistics(ctx context.Context, studentID, userID uuid.UUID) (*model.StudentAchievementStatistics, error)
+	GetTotalPointsForStudent(ctx context.Context, studentID uuid.UUID) (int64, error)
 }
 
 type reportRepository struct {
-	db *sql.DB
+	db                   *sql.DB
+	achievementMongoRepo *AchievementRepositoryMongo
 }
 
-func NewReportRepository(db *sql.DB) ReportRepository {
-	return &reportRepository{db: db}
+func NewReportRepository(db *sql.DB, mongoRepo *AchievementRepositoryMongo) ReportRepository {
+	return &reportRepository{
+		db:                   db,
+		achievementMongoRepo: mongoRepo,
+	}
 }
 
-// GetAchievementStatistics fetches global stats (all achievements; service filters by role)
+// GetAchievementStatistics fetches global stats
 func (r *reportRepository) GetAchievementStatistics(ctx context.Context, userID uuid.UUID) (*model.AchievementStatistics, error) {
 	stats := &model.AchievementStatistics{
 		TotalPerType:   make(map[string]int64),
@@ -32,97 +38,140 @@ func (r *reportRepository) GetAchievementStatistics(ctx context.Context, userID 
 		Distribution:   make(map[string]int64),
 	}
 
-	// Total per type
-	queryType := `
-		SELECT achievement_type, COUNT(*) as count
-		FROM achievements
-		GROUP BY achievement_type
-	`
-	rowsType, err := r.db.QueryContext(ctx, queryType)
+	// Get all verified mongo IDs from Postgres
+	var verifiedIDs []string
+	query := `SELECT mongo_achievement_id FROM achievement_references WHERE status = 'verified'`
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
-	defer rowsType.Close()
-	for rowsType.Next() {
-		var typ string
-		var count int64
-		if err := rowsType.Scan(&typ, &count); err != nil {
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		stats.TotalPerType[typ] = count
+		verifiedIDs = append(verifiedIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
-	// Total per period (monthly, last 12 months)
+	if len(verifiedIDs) == 0 {
+		return stats, nil
+	}
+
+	// Fetch achievements from Mongo one by one (since no batch method, loop)
+	var achievements []*model.Achievement
+	for _, id := range verifiedIDs {
+		ach, err := r.achievementMongoRepo.GetAchievementByID(id)
+		if err != nil || ach == nil {
+			continue
+		}
+		achievements = append(achievements, ach)
+	}
+
+	// Aggregate in Go
+	typeCounts := make(map[string]int64)
+	periodCounts := make(map[string]int64)
+	levelCounts := make(map[string]int64)
 	now := time.Now()
 	oneYearAgo := now.AddDate(-1, 0, 0)
-	queryPeriod := `
-		SELECT DATE_TRUNC('month', created_at) as period, COUNT(*) as count
-		FROM achievements
-		WHERE created_at >= $1
-		GROUP BY period
-		ORDER BY period
-	`
-	rowsPeriod, err := r.db.QueryContext(ctx, queryPeriod, oneYearAgo)
-	if err != nil {
-		return nil, err
-	}
-	defer rowsPeriod.Close()
-	for rowsPeriod.Next() {
-		var period time.Time
-		var count int64
-		if err := rowsPeriod.Scan(&period, &count); err != nil {
-			return nil, err
+	for _, ach := range achievements {
+		if ach.CreatedAt.Before(oneYearAgo) {
+			continue
 		}
-		stats.TotalPerPeriod[period.Format("2006-01")] = count
+		typeCounts[ach.AchievementType]++
+		periodKey := ach.CreatedAt.Format("2006-01")
+		periodCounts[periodKey]++
+		levelKey := ach.Level
+		if levelKey == "" {
+			levelKey = "unknown"
+		}
+		levelCounts[levelKey]++
 	}
 
-	// Top students (top 10 by points sum)
+	stats.TotalPerType = typeCounts
+	stats.TotalPerPeriod = periodCounts
+	stats.Distribution = levelCounts
+
+	// Top students: Fetch refs with student info
 	queryTop := `
-		SELECT s.student_id, u.full_name, COALESCE(SUM(a.points), 0) as points, COUNT(a.id) as count
-		FROM students s
+		SELECT ar.student_id, u.full_name, ar.mongo_achievement_id
+		FROM achievement_references ar
+		JOIN students s ON ar.student_id = s.id
 		JOIN users u ON s.user_id = u.id
-		LEFT JOIN achievements a ON s.id = a.student_id
-		GROUP BY s.id, s.student_id, u.full_name
-		ORDER BY points DESC NULLS LAST, count DESC NULLS LAST
-		LIMIT 10
+		WHERE ar.status = 'verified'
 	`
 	rowsTop, err := r.db.QueryContext(ctx, queryTop)
 	if err != nil {
 		return nil, err
 	}
 	defer rowsTop.Close()
+
+	studentAchMap := make(map[uuid.UUID][]string) // studentID -> list mongoIDs
 	for rowsTop.Next() {
-		var ts model.TopStudent
-		if err := rowsTop.Scan(&ts.StudentID, &ts.FullName, &ts.Points, &ts.Count); err != nil {
-			return nil, err
+		var sidStr, name, mid string
+		if err := rowsTop.Scan(&sidStr, &name, &mid); err != nil {
+			continue
 		}
-		stats.TopStudents = append(stats.TopStudents, ts)
+		sid, _ := uuid.Parse(sidStr)
+		studentAchMap[sid] = append(studentAchMap[sid], mid)
 	}
 
-	// Distribution by level (assume 'level' field in achievements)
-	queryDist := `
-		SELECT COALESCE(level, 'unknown') as level, COUNT(*) as count
-		FROM achievements
-		GROUP BY level
-	`
-	rowsDist, err := r.db.QueryContext(ctx, queryDist)
-	if err != nil {
-		return nil, err
+	// Calculate points per student
+	type studentData struct {
+		points int64
+		count  int64
+		name   string
 	}
-	defer rowsDist.Close()
-	for rowsDist.Next() {
-		var level string
-		var count int64
-		if err := rowsDist.Scan(&level, &count); err != nil {
-			return nil, err
+	studentMap := make(map[uuid.UUID]studentData)
+	for sid, mids := range studentAchMap {
+		var totalPoints int64
+		var achCount int64
+		for _, mid := range mids {
+			ach, err := r.achievementMongoRepo.GetAchievementByID(mid)
+			if err != nil || ach == nil {
+				continue
+			}
+			totalPoints += int64(ach.Points)
+			achCount++
 		}
-		stats.Distribution[level] = count
+		var fullName string
+		nameQuery := `SELECT u.full_name FROM students s JOIN users u ON s.user_id = u.id WHERE s.id = $1`
+		if err := r.db.QueryRowContext(ctx, nameQuery, sid.String()).Scan(&fullName); err != nil {
+			fullName = "Unknown"
+		}
+		studentMap[sid] = studentData{points: totalPoints, count: achCount, name: fullName}
 	}
+
+	// Convert to top students
+	var topStudents []model.TopStudent
+	for sid, data := range studentMap {
+		topStudents = append(topStudents, model.TopStudent{
+			StudentID: sid.String(),
+			FullName:  data.name,
+			Points:    data.points,
+			Count:     data.count,
+		})
+	}
+
+	// Sort by points DESC, then count DESC, limit 10
+	sort.Slice(topStudents, func(i, j int) bool {
+		if topStudents[i].Points != topStudents[j].Points {
+			return topStudents[i].Points > topStudents[j].Points
+		}
+		return topStudents[i].Count > topStudents[j].Count
+	})
+	if len(topStudents) > 10 {
+		topStudents = topStudents[:10]
+	}
+	stats.TopStudents = topStudents
 
 	return stats, nil
 }
 
-// GetStudentAchievementStatistics fetches stats for specific student
+// GetStudentAchievementStatistics similar logic but filter by studentID
 func (r *reportRepository) GetStudentAchievementStatistics(ctx context.Context, studentID, userID uuid.UUID) (*model.StudentAchievementStatistics, error) {
 	stats := &model.StudentAchievementStatistics{
 		PerType:      make(map[string]int64),
@@ -130,80 +179,92 @@ func (r *reportRepository) GetStudentAchievementStatistics(ctx context.Context, 
 		Distribution: make(map[string]int64),
 	}
 
-	// Total achievements
-	queryTotal := `SELECT COUNT(*) FROM achievements WHERE student_id = $1`
-	var total int64
-	err := r.db.QueryRowContext(ctx, queryTotal, studentID).Scan(&total)
+	// Get verified mongo IDs for student
+	var verifiedIDs []string
+	query := `SELECT mongo_achievement_id FROM achievement_references WHERE student_id = $1 AND status = 'verified'`
+	rows, err := r.db.QueryContext(ctx, query, studentID.String())
 	if err != nil {
 		return nil, err
 	}
-	stats.TotalAchievements = total
-
-	// Per type
-	queryType := `
-		SELECT achievement_type, COUNT(*) as count
-		FROM achievements
-		WHERE student_id = $1
-		GROUP BY achievement_type
-	`
-	rowsType, err := r.db.QueryContext(ctx, queryType, studentID)
-	if err != nil {
-		return nil, err
-	}
-	defer rowsType.Close()
-	for rowsType.Next() {
-		var typ string
-		var count int64
-		if err := rowsType.Scan(&typ, &count); err != nil {
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		stats.PerType[typ] = count
+		verifiedIDs = append(verifiedIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
-	// Per period (monthly, last 12 months)
+	if len(verifiedIDs) == 0 {
+		return stats, nil
+	}
+
+	// Fetch achievements
+	var achievements []*model.Achievement
+	for _, id := range verifiedIDs {
+		ach, err := r.achievementMongoRepo.GetAchievementByID(id)
+		if err != nil || ach == nil {
+			continue
+		}
+		achievements = append(achievements, ach)
+	}
+
+	// Aggregate
 	now := time.Now()
 	oneYearAgo := now.AddDate(-1, 0, 0)
-	queryPeriod := `
-		SELECT DATE_TRUNC('month', created_at) as period, COUNT(*) as count
-		FROM achievements
-		WHERE student_id = $1 AND created_at >= $2
-		GROUP BY period
-		ORDER BY period
-	`
-	rowsPeriod, err := r.db.QueryContext(ctx, queryPeriod, studentID, oneYearAgo)
-	if err != nil {
-		return nil, err
-	}
-	defer rowsPeriod.Close()
-	for rowsPeriod.Next() {
-		var period time.Time
-		var count int64
-		if err := rowsPeriod.Scan(&period, &count); err != nil {
-			return nil, err
+	for _, ach := range achievements {
+		if ach.CreatedAt.Before(oneYearAgo) {
+			continue
 		}
-		stats.PerPeriod[period.Format("2006-01")] = count
+		stats.PerType[ach.AchievementType]++
+		periodKey := ach.CreatedAt.Format("2006-01")
+		stats.PerPeriod[periodKey]++
+		levelKey := ach.Level
+		if levelKey == "" {
+			levelKey = "unknown"
+		}
+		stats.Distribution[levelKey]++
 	}
 
-	// Distribution by level
-	queryDist := `
-		SELECT COALESCE(level, 'unknown') as level, COUNT(*) as count
-		FROM achievements
-		WHERE student_id = $1
-		GROUP BY level
-	`
-	rowsDist, err := r.db.QueryContext(ctx, queryDist, studentID)
-	if err != nil {
-		return nil, err
-	}
-	defer rowsDist.Close()
-	for rowsDist.Next() {
-		var level string
-		var count int64
-		if err := rowsDist.Scan(&level, &count); err != nil {
-			return nil, err
-		}
-		stats.Distribution[level] = count
-	}
+	stats.TotalAchievements = int64(len(achievements))
 
 	return stats, nil
+}
+
+// GetTotalPointsForStudent
+func (r *reportRepository) GetTotalPointsForStudent(ctx context.Context, studentID uuid.UUID) (int64, error) {
+	var ids []string
+	query := `SELECT mongo_achievement_id FROM achievement_references WHERE student_id = $1 AND status = 'verified'`
+	rows, err := r.db.QueryContext(ctx, query, studentID.String())
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	var total int64
+	for _, id := range ids {
+		ach, err := r.achievementMongoRepo.GetAchievementByID(id)
+		if err != nil || ach == nil {
+			continue
+		}
+		total += int64(ach.Points)
+	}
+	return total, nil
 }

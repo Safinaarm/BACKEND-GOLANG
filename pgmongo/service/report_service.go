@@ -4,6 +4,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/google/uuid"
 
@@ -17,15 +18,15 @@ type ReportService interface {
 }
 
 type reportService struct {
-	reportRepo  repository.ReportRepository
-	studentRepo *repository.StudentRepository
+	reportRepo   repository.ReportRepository
+	studentRepo  *repository.StudentRepository
 	lecturerRepo repository.LecturerRepository
 }
 
 func NewReportService(reportRepo repository.ReportRepository, studentRepo *repository.StudentRepository, lecturerRepo repository.LecturerRepository) ReportService {
 	return &reportService{
-		reportRepo:  reportRepo,
-		studentRepo: studentRepo,
+		reportRepo:   reportRepo,
+		studentRepo:  studentRepo,
 		lecturerRepo: lecturerRepo,
 	}
 }
@@ -44,7 +45,7 @@ func (s *reportService) GetAchievementStatistics(ctx context.Context, userID uui
 		if student == nil {
 			return nil, fmt.Errorf("no student profile found")
 		}
-		// For student: Own stats (aggregate as global format)
+		// For student: Own stats
 		return s.aggregateOwnStats(ctx, student.ID)
 	}
 
@@ -60,7 +61,7 @@ func (s *reportService) GetAchievementStatistics(ctx context.Context, userID uui
 		if lecturer == nil {
 			return nil, fmt.Errorf("no lecturer profile found")
 		}
-		// For lecturer: Aggregate from advisees
+		// For lecturer: Advisees stats
 		return s.aggregateAdviseesStats(ctx, lecturer.ID)
 	}
 
@@ -106,7 +107,7 @@ func (s *reportService) GetStudentAchievementStatistics(ctx context.Context, stu
 	return s.reportRepo.GetStudentAchievementStatistics(ctx, studentID, userID)
 }
 
-// Helper methods (remove ctx since repo doesn't support it)
+// Helper methods
 func (s *reportService) isStudent(userID uuid.UUID) (bool, error) {
 	student, err := s.studentRepo.GetStudentByUserID(userID)
 	return student != nil, err
@@ -128,23 +129,36 @@ func (s *reportService) getLecturerID(userID uuid.UUID) (uuid.UUID, error) {
 	return lecturer.ID, nil
 }
 
-// Aggregate own stats to global format (for student role)
+// Aggregate own stats
 func (s *reportService) aggregateOwnStats(ctx context.Context, studentID uuid.UUID) (*model.AchievementStatistics, error) {
 	studentStats, err := s.reportRepo.GetStudentAchievementStatistics(ctx, studentID, uuid.Nil)
 	if err != nil {
 		return nil, err
 	}
 
-	// Convert to global stats format (simplified for own)
+	totalPoints, err := s.reportRepo.GetTotalPointsForStudent(ctx, studentID)
+	if err != nil {
+		return nil, err
+	}
+
+	student, err := s.studentRepo.GetStudentByID(studentID)
+	if err != nil {
+		return nil, err
+	}
+	fullName := "Own Profile"
+	if student != nil && student.User.FullName != "" {
+		fullName = student.User.FullName
+	}
+
 	stats := &model.AchievementStatistics{
 		TotalPerType:   studentStats.PerType,
 		TotalPerPeriod: studentStats.PerPeriod,
 		Distribution:   studentStats.Distribution,
 		TopStudents: []model.TopStudent{
 			{
-				StudentID: "self",
-				FullName:  "Own Profile",
-				Points:    0, // Calculate sum if needed
+				StudentID: studentID.String(),
+				FullName:  fullName,
+				Points:    totalPoints,
 				Count:     studentStats.TotalAchievements,
 			},
 		},
@@ -153,7 +167,7 @@ func (s *reportService) aggregateOwnStats(ctx context.Context, studentID uuid.UU
 	return stats, nil
 }
 
-// Aggregate advisees stats to global format (for lecturer role)
+// Aggregate advisees stats
 func (s *reportService) aggregateAdviseesStats(ctx context.Context, lecturerID uuid.UUID) (*model.AchievementStatistics, error) {
 	advisees, err := s.studentRepo.GetAdviseesByLecturerID(lecturerID)
 	if err != nil {
@@ -168,37 +182,50 @@ func (s *reportService) aggregateAdviseesStats(ctx context.Context, lecturerID u
 	for _, advisee := range advisees {
 		studentStats, err := s.reportRepo.GetStudentAchievementStatistics(ctx, advisee.ID, uuid.Nil)
 		if err != nil {
-			continue // Skip if error
+			continue
 		}
 
-		// Sum per type
+		// Sum
 		for typ, count := range studentStats.PerType {
 			totalType[typ] += count
 		}
-
-		// Sum per period
 		for period, count := range studentStats.PerPeriod {
 			totalPeriod[period] += count
 		}
-
-		// Sum distribution
 		for level, count := range studentStats.Distribution {
 			totalDist[level] += count
 		}
 
-		// Add to top (simplified, track max points/count per student)
+		points, err := s.reportRepo.GetTotalPointsForStudent(ctx, advisee.ID)
+		if err != nil {
+			points = 0
+		}
+
 		topStudents = append(topStudents, model.TopStudent{
 			StudentID: advisee.StudentID,
 			FullName:  advisee.User.FullName,
-			Points:    0, // Sum points from achievements if needed
+			Points:    points,
 			Count:     studentStats.TotalAchievements,
 		})
+	}
+
+	// Sort topStudents by points DESC, then count DESC
+	sort.Slice(topStudents, func(i, j int) bool {
+		if topStudents[i].Points != topStudents[j].Points {
+			return topStudents[i].Points > topStudents[j].Points
+		}
+		return topStudents[i].Count > topStudents[j].Count
+	})
+
+	// Limit to top 10
+	if len(topStudents) > 10 {
+		topStudents = topStudents[:10]
 	}
 
 	stats := &model.AchievementStatistics{
 		TotalPerType:   totalType,
 		TotalPerPeriod: totalPeriod,
-		TopStudents:    topStudents, // Sort by count/points if needed
+		TopStudents:    topStudents,
 		Distribution:   totalDist,
 	}
 
