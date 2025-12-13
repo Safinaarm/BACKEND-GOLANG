@@ -4,8 +4,10 @@ package service
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sort"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 
 	"BACKEND-UAS/pgmongo/model"
@@ -16,6 +18,8 @@ import (
 type ReportService interface {
 	GetAchievementStatistics(ctx context.Context, userID uuid.UUID) (*model.AchievementStatistics, error)
 	GetStudentAchievementStatistics(ctx context.Context, studentID, userID uuid.UUID) (*model.StudentAchievementStatistics, error)
+	HandleGetAchievementStatistics() fiber.Handler
+	HandleGetStudentAchievementStatistics() fiber.Handler
 }
 
 type reportService struct {
@@ -37,9 +41,8 @@ func NewReportService(reportRepo repository.ReportRepository, studentRepo *repos
 // @Tags Reports
 // @Accept json
 // @Produce json
-// @Param user_id path string true "User ID (UUID)"
 // @Success 200 {object} model.AchievementStatistics
-// @Failure 400 {object} model.ErrorResponse "No profile found"
+// @Failure 403 {object} model.ErrorResponse "No profile found"
 // @Failure 500 {object} model.ErrorResponse "Internal server error"
 // @Router /reports/statistics [get]
 func (s *reportService) GetAchievementStatistics(ctx context.Context, userID uuid.UUID) (*model.AchievementStatistics, error) {
@@ -86,9 +89,8 @@ func (s *reportService) GetAchievementStatistics(ctx context.Context, userID uui
 // @Accept json
 // @Produce json
 // @Param student_id path string true "Student ID (UUID)"
-// @Param user_id path string true "User ID (UUID) for access check"
 // @Success 200 {object} model.StudentAchievementStatistics
-// @Failure 400 {object} model.ErrorResponse "Access denied"
+// @Failure 403 {object} model.ErrorResponse "Access denied"
 // @Failure 404 {object} model.ErrorResponse "Student not found"
 // @Failure 500 {object} model.ErrorResponse "Internal server error"
 // @Router /reports/students/{student_id}/statistics [get]
@@ -128,6 +130,65 @@ func (s *reportService) GetStudentAchievementStatistics(ctx context.Context, stu
 
 	// Authorized: Fetch student-specific stats
 	return s.reportRepo.GetStudentAchievementStatistics(ctx, studentID, userID)
+}
+
+func (s *reportService) HandleGetAchievementStatistics() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		userIDStr, ok := c.Locals("user_id").(string)
+		if !ok {
+			return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+		}
+		userID, err := uuid.Parse(userIDStr)
+		if err != nil {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid user ID"})
+		}
+
+		stats, err := s.GetAchievementStatistics(c.Context(), userID)
+		if err != nil {
+			errMsg := err.Error()
+			status := http.StatusInternalServerError
+			if errMsg == "no student profile found" || errMsg == "no lecturer profile found" {
+				status = http.StatusForbidden
+			}
+			return c.Status(status).JSON(fiber.Map{"error": errMsg})
+		}
+
+		return c.JSON(stats)
+	}
+}
+
+func (s *reportService) HandleGetStudentAchievementStatistics() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		studentIDStr := c.Params("student_id")
+		studentID, err := uuid.Parse(studentIDStr)
+		if err != nil {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid student ID"})
+		}
+
+		userIDStr, ok := c.Locals("user_id").(string)
+		if !ok {
+			return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+		}
+		userID, err := uuid.Parse(userIDStr)
+		if err != nil {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid user ID"})
+		}
+
+		stats, err := s.GetStudentAchievementStatistics(c.Context(), studentID, userID)
+		if err != nil {
+			errMsg := err.Error()
+			status := http.StatusInternalServerError
+			switch {
+			case errMsg == "access denied":
+				status = http.StatusForbidden
+			case errMsg == "student not found":
+				status = http.StatusNotFound
+			}
+			return c.Status(status).JSON(fiber.Map{"error": errMsg})
+		}
+
+		return c.JSON(stats)
+	}
 }
 
 // Helper methods
@@ -225,7 +286,7 @@ func (s *reportService) aggregateAdviseesStats(ctx context.Context, lecturerID u
 		}
 
 		topStudents = append(topStudents, model.TopStudent{
-			StudentID: advisee.StudentID,
+			StudentID: advisee.ID.String(),
 			FullName:  advisee.User.FullName,
 			Points:    points,
 			Count:     studentStats.TotalAchievements,

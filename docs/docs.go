@@ -1256,8 +1256,6 @@ const docTemplate = `{
 
 
 
-
-        
         "/students": {
             "get": {
                 "description": "Mengambil daftar mahasiswa berdasarkan role user (student: own, lecturer: advisees, admin: all with pagination)",
@@ -1272,13 +1270,6 @@ const docTemplate = `{
                 ],
                 "summary": "Get all students",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "User ID (UUID)",
-                        "name": "user_id",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "type": "integer",
                         "description": "Page number (default 1)",
@@ -1296,10 +1287,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/model.Student"
-                            }
+                            "$ref": "#/definitions/model.UserResponse"
                         }
                     },
                     "500": {
@@ -1308,7 +1296,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.ErrorResponse"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ]
             }
         },
         "/students/me": {
@@ -1324,15 +1317,6 @@ const docTemplate = `{
                     "Students"
                 ],
                 "summary": "Get own student profile",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "User ID (UUID)",
-                        "name": "user_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1352,7 +1336,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.ErrorResponse"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ]
             }
         },
         "/students/{id}": {
@@ -1374,13 +1363,6 @@ const docTemplate = `{
                         "description": "Student ID (UUID)",
                         "name": "id",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "User ID (UUID) for access check",
-                        "name": "user_id",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -1409,7 +1391,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.ErrorResponse"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ]
             }
         },
         "/students/{student_id}/achievements": {
@@ -1435,13 +1422,6 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "User ID (UUID) for access check",
-                        "name": "user_id",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
                         "description": "Filter status (draft, submitted, verified, rejected, deleted)",
                         "name": "status",
                         "in": "query"
@@ -1463,10 +1443,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/model.AchievementReference"
-                            }
+                            "$ref": "#/definitions/model.UserResponse"
                         }
                     },
                     "400": {
@@ -1487,11 +1464,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.ErrorResponse"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ]
             }
         },
         "/students/{student_id}/advisor": {
-            "patch": {
+            "put": {
                 "description": "Memperbarui dosen wali mahasiswa (hanya untuk admin)",
                 "consumes": [
                     "application/json"
@@ -1512,18 +1494,18 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "type": "string",
                         "description": "New Advisor ID (UUID)",
-                        "name": "advisor_id",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "User ID (UUID) - must be admin",
-                        "name": "user_id",
-                        "in": "query",
-                        "required": true
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "advisor_id": {
+                                    "type": "string"
+                                }
+                            }
+                        }
                     }
                 ],
                 "responses": {
@@ -1542,9 +1524,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.ErrorResponse"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ]
             }
         },
+
+
+
+
         "/reports/statistics": {
             "get": {
                 "description": "Mengambil statistik prestasi berdasarkan role user (student: own, lecturer: advisees, admin: global)",
