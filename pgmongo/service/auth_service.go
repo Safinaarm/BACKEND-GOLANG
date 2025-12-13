@@ -10,6 +10,7 @@ import (
 	"BACKEND-UAS/pgmongo/repository"
 )
 
+// AuthService defines the interface for authentication operations
 type AuthService interface {
 	Login(ctx context.Context, identifier, password string) (string, string, *model.User, string, []string, error)
 	Refresh(ctx context.Context, refreshToken string) (string, string, *model.User, string, []string, error)
@@ -25,6 +26,17 @@ func NewAuthService(r repository.UserRepository, j jwt.JWTService) AuthService {
 	return &authService{userRepo: r, jwtSvc: j}
 }
 
+// @Summary Login user
+// @Description Melakukan login dengan username/email dan password, menghasilkan access dan refresh token
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param login body LoginRequest true "Credentials (username or email and password)"
+// @Success 200 {object} LoginResponse
+// @Failure 400 {object} model.ErrorResponse "Invalid credentials or missing fields"
+// @Failure 401 {object} model.ErrorResponse "Account inactive"
+// @Failure 500 {object} model.ErrorResponse "Internal server error"
+// @Router /login [post]
 func (s *authService) Login(ctx context.Context, identifier, password string) (string, string, *model.User, string, []string, error) {
 	user, err := s.userRepo.FindByUsernameOrEmail(ctx, identifier)
 	if err != nil {
@@ -59,6 +71,17 @@ func (s *authService) Login(ctx context.Context, identifier, password string) (s
 	return accessToken, refreshToken, user, roleName, perms, nil
 }
 
+// @Summary Refresh token
+// @Description Memperbarui access dan refresh token menggunakan refresh token yang valid
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param refresh_token body RefreshRequest true "Refresh token"
+// @Success 200 {object} LoginResponse
+// @Failure 400 {object} model.ErrorResponse "Invalid refresh token"
+// @Failure 401 {object} model.ErrorResponse "Account inactive"
+// @Failure 500 {object} model.ErrorResponse "Internal server error"
+// @Router /refresh [post]
 func (s *authService) Refresh(ctx context.Context, refreshToken string) (string, string, *model.User, string, []string, error) {
 	// Validate the refresh token and extract claims
 	token, err := s.jwtSvc.ValidateToken(refreshToken)
@@ -107,6 +130,16 @@ func (s *authService) Refresh(ctx context.Context, refreshToken string) (string,
 	return accessToken, refreshTokenNew, user, roleName, perms, nil
 }
 
+// @Summary Logout user
+// @Description Melakukan logout dengan invalidasi refresh token (client-side untuk demo)
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param refresh_token body RefreshRequest true "Refresh token to invalidate"
+// @Success 200 {object} model.SuccessResponse
+// @Failure 400 {object} model.ErrorResponse "Invalid refresh token"
+// @Failure 500 {object} model.ErrorResponse "Internal server error"
+// @Router /logout [post]
 func (s *authService) Logout(ctx context.Context, refreshToken string) error {
 	// For demo with stateless JWT, logout is client-side.
 	// In production, you could blacklist the refresh token in a DB or Redis.

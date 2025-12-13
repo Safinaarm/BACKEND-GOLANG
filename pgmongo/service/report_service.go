@@ -12,6 +12,7 @@ import (
 	"BACKEND-UAS/pgmongo/repository"
 )
 
+// ReportService defines the interface for report and statistics operations
 type ReportService interface {
 	GetAchievementStatistics(ctx context.Context, userID uuid.UUID) (*model.AchievementStatistics, error)
 	GetStudentAchievementStatistics(ctx context.Context, studentID, userID uuid.UUID) (*model.StudentAchievementStatistics, error)
@@ -31,6 +32,16 @@ func NewReportService(reportRepo repository.ReportRepository, studentRepo *repos
 	}
 }
 
+// @Summary Get achievement statistics
+// @Description Mengambil statistik prestasi berdasarkan role user (student: own, lecturer: advisees, admin: global)
+// @Tags Reports
+// @Accept json
+// @Produce json
+// @Param user_id path string true "User ID (UUID)"
+// @Success 200 {object} model.AchievementStatistics
+// @Failure 400 {object} model.ErrorResponse "No profile found"
+// @Failure 500 {object} model.ErrorResponse "Internal server error"
+// @Router /reports/statistics [get]
 func (s *reportService) GetAchievementStatistics(ctx context.Context, userID uuid.UUID) (*model.AchievementStatistics, error) {
 	// Access check based on role
 	isStudent, err := s.isStudent(userID)
@@ -69,6 +80,18 @@ func (s *reportService) GetAchievementStatistics(ctx context.Context, userID uui
 	return s.reportRepo.GetAchievementStatistics(ctx, userID)
 }
 
+// @Summary Get student achievement statistics
+// @Description Mengambil statistik prestasi mahasiswa spesifik (dengan access check: own, advisor, or admin)
+// @Tags Reports
+// @Accept json
+// @Produce json
+// @Param student_id path string true "Student ID (UUID)"
+// @Param user_id path string true "User ID (UUID) for access check"
+// @Success 200 {object} model.StudentAchievementStatistics
+// @Failure 400 {object} model.ErrorResponse "Access denied"
+// @Failure 404 {object} model.ErrorResponse "Student not found"
+// @Failure 500 {object} model.ErrorResponse "Internal server error"
+// @Router /reports/students/{student_id}/statistics [get]
 func (s *reportService) GetStudentAchievementStatistics(ctx context.Context, studentID, userID uuid.UUID) (*model.StudentAchievementStatistics, error) {
 	// Access check
 	student, err := s.studentRepo.GetStudentByID(studentID)

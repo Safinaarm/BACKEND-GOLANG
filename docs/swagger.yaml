@@ -1,0 +1,12 @@
+basePath: /
+host: localhost:3000
+info:
+  contact: {}
+  description: API untuk sistem manajemen user, achievement, student, lecturer, dan
+    report
+  title: BACKEND-UAS API
+  version: "1.0"
+paths: {}
+schemes:
+- http
+swagger: "2.0"
