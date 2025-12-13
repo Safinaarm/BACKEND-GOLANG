@@ -13,6 +13,18 @@ import (
 )
 
 // SetupLecturerRoutes sets up the lecturer routes with auth middleware
+// @Summary Get all lecturers
+// @Description Mengambil daftar dosen berdasarkan role user (lecturer: own data, student: advisor data, admin: all with pagination)
+// @Tags Lecturers
+// @Accept json
+// @Produce json
+// @Param page query int false "Page number (default 1)"
+// @Param limit query int false "Items per page (default 10)"
+// @Success 200 {object} model.PaginatedResponse[model.Lecturer] "Paginated lecturers"
+// @Failure 400 {object} model.ErrorResponse "No advisor assigned"
+// @Failure 500 {object} model.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /lecturers [get]
 func SetupLecturerRoutes(app *fiber.App, lecturerSvc service.LecturerService, authM *middleware.AuthMiddlewareConfig) {
 	v1 := app.Group("/api/v1")
 	{
@@ -50,7 +62,19 @@ func SetupLecturerRoutes(app *fiber.App, lecturerSvc service.LecturerService, au
 				return c.JSON(paginated)
 			})
 
-			// GET /api/v1/lecturers/:id/advisees - With access check
+			// @Summary Get lecturer's advisees
+			// @Description Mengambil daftar mahasiswa bimbingan dosen (dengan access check: own, advisor, or admin)
+			// @Tags Lecturers
+			// @Accept json
+			// @Produce json
+			// @Param lecturer_id path string true "Lecturer ID (UUID)"
+			// @Param user_id query string true "User ID (UUID) for access check"
+			// @Success 200 {array} model.Student "List of advisees"
+			// @Failure 400 {object} model.ErrorResponse "Access denied"
+			// @Failure 404 {object} model.ErrorResponse "Lecturer not found"
+			// @Failure 500 {object} model.ErrorResponse "Internal server error"
+			// @Security ApiKeyAuth
+			// @Router /lecturers/{lecturer_id}/advisees [get]
 			lecturers.Get("/:id/advisees", func(c *fiber.Ctx) error {
 				idStr := c.Params("id")
 				id, err := uuid.Parse(idStr)

@@ -1138,7 +1138,7 @@ const docTemplate = `{
 
 
         
-        "/lecturers": {
+             "/lecturers": {
             "get": {
                 "description": "Mengambil daftar dosen berdasarkan role user (lecturer: own data, student: advisor data, admin: all with pagination)",
                 "consumes": [
@@ -1152,13 +1152,6 @@ const docTemplate = `{
                 ],
                 "summary": "Get all lecturers",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "User ID (UUID)",
-                        "name": "user_id",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "type": "integer",
                         "description": "Page number (default 1)",
@@ -1176,10 +1169,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/model.Lecturer"
-                            }
+                            "$ref": "#/definitions/model.UserResponse"
                         }
                     },
                     "400": {
@@ -1194,7 +1184,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.ErrorResponse"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ]
             }
         },
         "/lecturers/{lecturer_id}/advisees": {
@@ -1216,13 +1211,6 @@ const docTemplate = `{
                         "description": "Lecturer ID (UUID)",
                         "name": "lecturer_id",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "User ID (UUID) for access check",
-                        "name": "user_id",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -1254,9 +1242,22 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.ErrorResponse"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ]
             }
         },
+
+
+
+
+
+
+
+        
         "/students": {
             "get": {
                 "description": "Mengambil daftar mahasiswa berdasarkan role user (student: own, lecturer: advisees, admin: all with pagination)",
