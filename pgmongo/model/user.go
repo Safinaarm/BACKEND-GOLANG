@@ -36,3 +36,16 @@ type AuthResponse struct {
 		Permissions  []string `json:"permissions" schema:"permissions"`
 	} `json:"data" schema:"data"`
 }
+// ErrorResponse adalah format standar response saat terjadi error
+type ErrorResponse struct {
+	Message string `json:"message"`
+}
+
+// UserResponse adalah wrapper untuk response list user (untuk pagination nanti)
+type UserResponse struct {
+	Data       []*User `json:"data"`
+	Total      int64   `json:"total,omitempty"`
+	Page       int     `json:"page,omitempty"`
+	Limit      int     `json:"limit,omitempty"`
+	TotalPages int     `json:"total_pages,omitempty"`
+}
