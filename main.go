@@ -76,8 +76,8 @@ func main() {
 	// Routes
 	route.AuthRoute(app, authSvc, authMiddleware)
 	route.UserRoute(app, userSvc, authMiddleware)
-	route.RegisterAchievementRoutes(app, achievementSvc, authMiddleware)
-	route.SetupStudentRoutes(app, studentSvc, authMiddleware) // Pass authMiddleware for student routes
+	route.SetupAchievementRoutes(app, achievementSvc, authMiddleware)
+	route.SetupStudentRoutes(app, studentSvc, authMiddleware)   // Pass authMiddleware for student routes
 	route.SetupLecturerRoutes(app, lecturerSvc, authMiddleware) // Pass authMiddleware for lecturer routes
 	route.SetupReportRoutes(app, reportSvc, authMiddleware)
 
