@@ -204,10 +204,12 @@ func (m *mockUserRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-func (m *mockUserRepo) GetAll(ctx context.Context) ([]*model.User, error) { return nil, nil }
+func (m *mockUserRepo) GetAll(ctx context.Context) ([]*model.User, error)             { return nil, nil }
 func (m *mockUserRepo) Update(ctx context.Context, id string, user *model.User) error { return nil }
-func (m *mockUserRepo) UpdateRole(ctx context.Context, id, roleID string) error { return nil }
-func (m *mockUserRepo) GetRoleNameByID(ctx context.Context, roleID string) (string, error) { return "", nil }
+func (m *mockUserRepo) UpdateRole(ctx context.Context, id, roleID string) error       { return nil }
+func (m *mockUserRepo) GetRoleNameByID(ctx context.Context, roleID string) (string, error) {
+	return "", nil
+}
 func (m *mockUserRepo) GetPermissionsByRoleID(ctx context.Context, roleID string) ([]string, error) {
 	return nil, nil
 }
@@ -337,13 +339,23 @@ func (m *mockUserRepositoryForAuth) FindByUsernameOrEmail(ctx context.Context, i
 	return m.userByIdentifier, m.findErr
 }
 
-func (m *mockUserRepositoryForAuth) FindByID(ctx context.Context, id string) (*model.User, error) { return nil, nil }
-func (m *mockUserRepositoryForAuth) GetAll(ctx context.Context) ([]*model.User, error) { return nil, nil }
+func (m *mockUserRepositoryForAuth) FindByID(ctx context.Context, id string) (*model.User, error) {
+	return nil, nil
+}
+func (m *mockUserRepositoryForAuth) GetAll(ctx context.Context) ([]*model.User, error) {
+	return nil, nil
+}
 func (m *mockUserRepositoryForAuth) Create(ctx context.Context, user *model.User) error { return nil }
-func (m *mockUserRepositoryForAuth) Update(ctx context.Context, id string, user *model.User) error { return nil }
+func (m *mockUserRepositoryForAuth) Update(ctx context.Context, id string, user *model.User) error {
+	return nil
+}
 func (m *mockUserRepositoryForAuth) Delete(ctx context.Context, id string) error { return nil }
-func (m *mockUserRepositoryForAuth) UpdateRole(ctx context.Context, id, roleID string) error { return nil }
-func (m *mockUserRepositoryForAuth) GetRoleNameByID(ctx context.Context, roleID string) (string, error) { return "", nil }
+func (m *mockUserRepositoryForAuth) UpdateRole(ctx context.Context, id, roleID string) error {
+	return nil
+}
+func (m *mockUserRepositoryForAuth) GetRoleNameByID(ctx context.Context, roleID string) (string, error) {
+	return "", nil
+}
 func (m *mockUserRepositoryForAuth) GetPermissionsByRoleID(ctx context.Context, roleID string) ([]string, error) {
 	return nil, nil
 }
